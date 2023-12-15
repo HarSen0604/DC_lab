@@ -5,3 +5,16 @@
 Note: 
 * Install rpcbind in your machine (`sudo apt-get install rpcbind`)
 * Type `rpcinfo`
+
+Compile this IDL file by using the following command. `rpcgen -a -C add.x`
+`-C` 	=> C language
+`-a` 	=> generate all the files including samples
+
+It will generate the following files:
+	add.h			-> header file
+	add_client.c	-> client program
+	add_clnt.c		-> client stub
+	add_server.c	-> server program
+	add_svc.c		-> server skeleton
+	add_xdr.c		-> XDR routines used by both the client and the server
+	Makefile.add	-> Makefile
