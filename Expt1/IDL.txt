@@ -1,0 +1,7 @@
+* An IDL is a file (suffixed with `.x`) which optionally begins with a bunch of type definitions and then defines the remote procedures.
+* A set of remote procedures are grouped into a version.
+* One or more versions are grouped into a program.
+
+Note: 
+* Install rpcbind in your machine (`sudo apt-get install rpcbind`)
+* Type `rpcinfo`
