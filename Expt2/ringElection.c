@@ -1,160 +1,241 @@
+#include <sys/types.h>
+#include <sys/socket.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
-#include <time.h>
-#include <sys/socket.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
-#include <sys/types.h>
+#include <string.h>
+#include <pthread.h>
+#include <errno.h>
 
-#define MSG_CONFIRM 0
-#define TRUE 1
-#define FALSE 0
-#define ML 1024
-#define MPROC 32
+struct sockaddr_in abc, sender, tosend;
+int cordinator, max, mynode;
+int soc;
 
-/*
-    Function to create a new connection to port 'connect_to'
-    1. Creates the socket
-    2. Binds to port
-    3. Returns socket id
-*/
+struct msg_node
+{
+    int ar[6];
+    char msg[100];
+    int node_no;
+};
 
-typedef struct lamport_clock {
-    int timer;
-} lamport_clock;
-
-void init(lamport_clock *clk) {
-    clk->timer = 0;
-}
-
-void tick(lamport_clock *clk, int phase) {
-    clk->timer += phase;
-}
-
-int str_to_int(char str[ML], int n) {
-    int x = 0, i = 0, k;
-    printf("x: %d\n", x);
-    for (i = 0; i < n; i++)
+void meelc(void* arg)
+{
+    struct msg_node *tem = (struct msg_node *)arg;
+    char elect_inti[100] = "elect_inti";
+    char me_elected[100] = "me_elected";
+    socklen_t len = sizeof(sender);
+    tem->ar[mynode] = 1;
+    tem->node_no = mynode;
+    strcpy(tem->msg, elect_inti);
+    for (int i = mynode + 1; i <= max; i++)
     {
-        k = atoi(str[i]);
-        x = x * 10 + k;
+        tosend.sin_port = htons(i + 4500);
+        printf("sending to %d\n", i);
+        strcpy(tem->msg, elect_inti);
+        tem->node_no = mynode;
+        sendto(soc, tem, sizeof(struct msg_node), 0, (struct sockaddr *)&tosend, len);
+        sleep(8);
     }
-    return x;
-}
 
-void update_clock(lamport_clock *clk, int new_time) {
-    clk->timer = clk->timer + new_time;
-}
-
-int connect_to_port(int connect_to) {
-    int sock_id;
-    int opt = 1;
-    struct sockaddr_in server;
-    sock_id = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock_id < 0) {
-        perror("Unable to create a socket");
-        exit(EXIT_FAILURE);
+    for (int i = 0; i < mynode; i++)
+    {
+        tosend.sin_port = htons(i + 4500);
+        strcpy(tem->msg, elect_inti);
+        tem->node_no = mynode;
+        sendto(soc, tem, sizeof(struct msg_node), 0, (struct sockaddr *)&tosend, len);
+        printf("sending to %d\n", i);
+        sleep(8);
     }
-    setsockopt(sock_id, SOL_SOCKET, SO_REUSEADDR, (const void *)&opt, sizeof(int));
-    memset(&server, 0, sizeof(server));
-    server.sin_family = AF_INET;
-    server.sin_addr.s_addr = INADDR_ANY;
-    server.sin_port = htons(connect_to);
+}
 
-    if (bind(sock_id, (const struct sockaddr *)&server, sizeof(server)) < 0) {
-        perror("Unable to bind to port");
-        exit(EXIT_FAILURE);
+void *cord()
+{
+    printf("cordni = %d", cordinator);
+    socklen_t len = sizeof(sender);
+    struct msg_node *tem = malloc(sizeof(struct msg_node));
+    strcpy(tem->msg, "me_elected");
+    tem->node_no = cordinator;
+    for (int i = 0; i <= max; i++)
+    {
+        tosend.sin_port = htons(i + 4500);
+        sendto(soc, tem, sizeof(struct msg_node), 0, (struct sockaddr *)&tosend, len);
     }
-    return sock_id;
 }
 
-/*
-    sends a message to port id to
-*/
+void *fun()
+{
+    // printf("sdcv");
+    struct msg_node *tem = malloc(sizeof(struct msg_node));
+    socklen_t len = sizeof(sender);
+    char elect_inti[100] = "elect_inti";
+    char me_elected[100] = "me_elected";
+    int inpt;
+    while (1)
+    {
+        printf("enter 1 to check cordinator: ");
+        scanf("%d", &inpt);
+        if (inpt == 1)
+        {
+            tosend.sin_port = htons(cordinator + 4500);
+            strcpy(tem->msg, "alive");
+            tem->node_no = mynode;
+            sendto(soc, tem, sizeof(struct msg_node), 0, (struct sockaddr *)&tosend, len);
+            // recvfrom(soc,tem,sizeof(struct msg_node),0,(struct sockaddr *)&sender,&len);
+            sleep(8);
+            if (strcmp(tem->msg, "salive") != 0)
+            {
+                printf("\ndead cordinator\n");
+                for (int i = 0; i <= max; i++)
+                {
+                    tem->ar[mynode] = 0;
+                }
+                tem->ar[mynode] = 1;
+                tem->node_no = mynode;
+                strcpy(tem->msg, elect_inti);
+                for (int i = mynode + 1; i <= max; i++)
+                {
+                    tosend.sin_port = htons(i + 4500);
+                    printf("sending to %d\n", i);
+                    strcpy(tem->msg, elect_inti);
+                    tem->node_no = mynode;
+                    sendto(soc, tem, sizeof(struct msg_node), 0, (struct sockaddr *)&tosend, len);
+                    sleep(8);
+                }
 
-void send_to_id(int to, int id, int diff) {
-    struct sockaddr_in cl;
-    memset(&cl, 0, sizeof(cl));
-    char message[ML];
-    sprintf(message, "%d", diff);
-    cl.sin_family = AF_INET;
-    cl.sin_addr.s_addr = INADDR_ANY;
-    cl.sin_port = htons(to);
-
-    sendto(id, \
-           (const char *)message, \
-           strlen(message), \
-           MSG_CONFIRM, \
-           (const struct sockaddr *)&cl, \
-           sizeof(cl));
-}
-
-void send_poll(int to, int id) {
-    struct sockaddr_in cl;
-    memset(&cl, 0, sizeof(cl));
-    char message[ML];
-    sprintf(message, "%s", "POLL");
-    cl.sin_family = AF_INET;
-    cl.sin_addr.s_addr = INADDR_ANY;
-    cl.sin_port = htons(to);
-
-    sendto(id, \
-           (const char *)message, \
-           strlen(message), \
-           MSG_CONFIRM, \
-           (const struct sockaddr *)&cl, \
-           sizeof(cl));
-}
-
-/*
-    announces completion by sending co-ord messages
-*/
-
-int main(int argc, char *argv[]) {
-    // 0. Initialize variables
-    int self = atoi(argv[1]), server = atoi(argv[2]), phase = atoi(argv[3]);
-    int times[MPROC];
-    int sock_id;
-    int avg = 0, diff = 0;
-    int new_time;
-    int itr, len, n, start_at;
-    char buff[ML], message[ML];
-    
-    struct sockaddr_in from;
-    lamport_clock self_clock;
-    from.sin_family = AF_INET;
-    from.sin_addr.s_addr = htonl(INADDR_ANY);
-    init(&self_clock);
-    tick(&self_clock, phase);
-
-    // 1. Create socket
-    printf("Creating a node at %d %d \n", self, start_at);
-     sock_id = connect_to_port(self);
-
-    // 2. If the node is not the initiator, then wait for someone else
-    while (TRUE) {
-        printf("\t - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
-        sleep(2);
-        avg = 0;
-        tick(&self_clock, phase);
-        memset(&from, 0, sizeof(from));
-        n = recvfrom(sock_id, (char *)buff, ML, MSG_WAITALL, (struct sockaddr *)&from, &len);
-        buff[n] = '\0';
-        if (strcmp(buff, "POLL") == 0) {
-            printf("Received POLL, sending time to server\n");
-            send_to_id(server, sock_id, self_clock.timer);
-            printf("Time sent\n");
+                for (int i = 0; i <= mynode; i++)
+                {
+                    tosend.sin_port = htons(i + 4500);
+                    printf("sending to %d\n", i);
+                    strcpy(tem->msg, elect_inti);
+                    tem->node_no = mynode;
+                    sendto(soc, tem, sizeof(struct msg_node), 0, (struct sockaddr *)&tosend, len);
+                    sleep(8);
+                }
+            }
         }
-        else {
-            new_time = atoi(buff);
-            printf("Got clock corrections: %d, old time %d\n", new_time, self_clock.timer);
-            update_clock(&self_clock, new_time);
-            printf("Updated time, new time: %d\n", self_clock.timer);
-            exit(EXIT_SUCCESS);
-        }
-        printf("\t - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
     }
+    free(tem);
 }
+
+int main(int argc, char *argv[])
+{
+    struct timeval timeout;
+    pthread_t thread1, t2 = 0, t3;
+    int a;
+    cordinator = atoi(argv[2]);
+    max = cordinator;
+    mynode = atoi(argv[1]);
+    soc = socket(AF_INET, SOCK_DGRAM, 0);
+    timeout.tv_sec = 5;
+    timeout.tv_usec = 0;
+    abc.sin_addr.s_addr = INADDR_ANY;
+    abc.sin_family = AF_INET;
+    abc.sin_port = htons(atoi(argv[1]) + 4500);
+    bind(soc, (struct sockaddr *)&abc, sizeof(abc));
+    setsockopt(soc, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout));
+    tosend.sin_addr.s_addr = INADDR_ANY;
+    tosend.sin_family = AF_INET;
+    tosend.sin_port = htons(cordinator + 4500);
+    struct msg_node *tem = malloc(sizeof(struct msg_node));
+    char elect_inti[100] = "elect_inti";
+    char me_elected[100] = "me_elected";
+    socklen_t len = sizeof(sender);
+    pthread_create(&thread1, NULL, fun, NULL);
+    while (1)
+    {
+        ssize_t bytesRead = recvfrom(soc, tem, sizeof(struct msg_node), 0, (struct sockaddr *)&sender, &len);
+        if (bytesRead == -1)
+        {
+            if (errno == EWOULDBLOCK || errno == EAGAIN)
+            {
+                // Handle timeout (no data received within the specified time)
+                printf("\nTimeout: No data received within the specified time.mynode = %d cord = %d\n", mynode, cordinator);
+            }
+            continue;
+        }
+        printf("%s\n", tem->msg);
+        if (strcmp(elect_inti, tem->msg) == 0)
+        {
+            // if(tem->node_no==mynode){
+            strcpy(tem->msg, "OK");
+            tosend.sin_port = htons(tem->node_no + 4500);
+            printf(" sending okay to %d node\n ", tem->node_no);
+            tem->node_no = mynode;
+            sendto(soc, tem, sizeof(struct msg_node), 0, (struct sockaddr *)&tosend, len);
+            strcpy(tem->msg, "O");
+            for (int i = 0; i <= max; i++)
+            {
+                if (tem->ar[i] == 1)
+                {
+                    a = i;
+                    break;
+                }
+            }
+
+            if (a == mynode)
+            {
+                for (int i = 0; i <= max; i++)
+                {
+                    if (tem->ar[i] == 1)
+                    {
+                        a = i;
+                    }
+                }
+                cordinator = a;
+                printf("cordinator %d\n", a);
+                pthread_create(&t3, NULL, cord, NULL);
+                continue;
+            }
+            tem->node_no = mynode;
+            pthread_create(&t2, NULL, meelc, (void *)tem);
+            //}
+        }
+
+        if (strcmp(me_elected, tem->msg) == 0)
+        {
+            if (t2 != 0)
+            {
+                pthread_cancel(t2);
+                t2 = 0;
+            }
+            cordinator = tem->node_no;
+            pthread_cancel(thread1);
+            pthread_create(&thread1, NULL, fun, NULL);
+        }
+
+        if (strcmp("alive", tem->msg) == 0)
+        {
+            printf("killing\n");
+            tosend.sin_port = htons(tem->node_no + 4500);
+            strcpy(tem->msg, "salive");
+            tem->node_no = mynode;
+            sendto(soc, tem, sizeof(struct msg_node), 0, (struct sockaddr *)&tosend, len);
+        }
+
+        if (strcmp("salive", tem->msg) == 0)
+        {
+            printf("killing as alive \n");
+            pthread_cancel(thread1);
+            pthread_create(&thread1, NULL, fun, NULL);
+        }
+
+        if (strcmp(tem->msg, "OK") == 0)
+        {
+
+            printf("killing as ok recieved from %d\n", tem->node_no);
+            pthread_cancel(thread1);
+            pthread_create(&thread1, NULL, fun, NULL);
+            if (t2 != 0)
+            {
+                pthread_cancel(t2);
+                t2 = 0;
+            }
+        }
+    }
+
+    // strcpy(msg,"abcd");
+
+    // sendto(soc,tem,sizeof(struct msg_node),0,(struct sockaddr *)&sender,len);
+}
+
+// Hey sollu if any errors ,mostly fine than edachina solllu daaaaaaaaaaaaaa
