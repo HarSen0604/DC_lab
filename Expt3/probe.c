@@ -1,128 +1,123 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <time.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
 #include <sys/types.h>
-#include <time.h>
-#define MSG_CONFIRM 0
-#define TRUE 1
-#define FALSE 0
+#include <errno.h>
 
-typedef struct list
-{
+// probe[0] => the ID which started the process
+// probe[1] => the ID where the probe is currently present
+// probe[2] => the ID where the probe is received next
+
+typedef struct list {
     int probe[3];
 } list;
 
-int connect_to_port(int connect_to)
-{
-    int sock_id;
-    int opt = 1;
-    struct sockaddr_in server;
-    if ((sock_id = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-    {
-        perror("unable to create a socket");
+int connect_to_port(int connect_to) {
+    int sock_id = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock_id < 0) {
+        perror("Unable to create a socket");
         exit(EXIT_FAILURE);
     }
-    setsockopt(sock_id, SOL_SOCKET, SO_REUSEADDR, (const void *)&opt, sizeof(int));
-    memset(&server, 0, sizeof(server));
-    server.sin_family = AF_INET;
-    server.sin_addr.s_addr = INADDR_ANY;
-    server.sin_port = htons(connect_to);
-    if (bind(sock_id, (const struct sockaddr *)&server, sizeof(server)) < 0)
-    {
-        perror("unable to bind to port");
+    
+    struct sockaddr_in server_address;
+
+    server_address.sin_family = AF_INET;
+    server_address.sin_addr.s_addr = INADDR_ANY;
+    server_address.sin_port = htons(connect_to);
+
+    // Bind the socket to a specific address and port
+    if (bind(sock_id, (const struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
+        perror("Bind failed");
         exit(EXIT_FAILURE);
     }
+
     return sock_id;
 }
 
-void send_to_id(int to, int id, list llist)
-{
-    struct sockaddr_in cl;
-    memset(&cl, 0, sizeof(cl));
-    cl.sin_family = AF_INET;
-    cl.sin_addr.s_addr = INADDR_ANY;
-    cl.sin_port = htons(to);
-    sendto(id, &llist, sizeof(list), MSG_CONFIRM, (const struct sockaddr *)&cl, sizeof(cl));
+// Sending process to the ID
+void send_to_id(int id, int sock_id, list l) {
+    struct sockaddr_in client_address;
+    memset(&client_address, 0, sizeof(client_address));
+
+    client_address.sin_family = AF_INET;
+    client_address.sin_addr.s_addr = INADDR_ANY;
+    client_address.sin_port = htons(id);
+    
+    sendto(sock_id, &l, sizeof(list), 0, (const struct sockaddr *)&client_address, sizeof(client_address));
 }
 
-void send_probes(int id, int self, int *procs, int n_edges, list l)
-{
-    for (int i = 0; i < n_edges; i++)
-    {
-        l.probe[2] = procs[i];
-        printf("Sending Probe to: %d\n", procs[i]);
-        send_to_id(procs[i], id, l);
+// Sending the probes to each node
+void send_probes(int sock_id, int self, int *process, int numEdges, list l) {
+    for (int i = 0; i < numEdges; i++) {
+        l.probe[2] = process[i];
+        send_to_id(process[i], sock_id, l);
+        printf("Sending probe to ID: %d\n", process[i]);
     }
 }
 
-void print(list l)
-{
-    for (int i = 0; i < 3; i++)
-    {
+void print(list l) {
+    printf("Recevied probe: ");
+    for (int i = 0; i < 3; i++) {
         printf("%d ", l.probe[i]);
     }
+    printf("\n");
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
+    int self = atoi(argv[1]); // self ID
+    int numEdges = atoi(argv[3]); // other edges
 
-    int self = atoi(argv[1]);
-    int sock_id, bully_id;
-    int itr, len, n, start_at;
-    int n_edges = atoi(argv[3]);
+    int process[numEdges]; // the processes to which it is connected
+    for (int i = 0; i < numEdges; i++) {
+        process[i] = atoi(argv[4 + i]);
+    }
 
-    int procs[10];
+    // it starts the probing (deadlock detection) process
+    bool start_at = atoi(argv[2]) == 1 ? true : false;
 
-    struct sockaddr_in from;
+    // Start creating the node
+    printf("Creating a node of ID %d and starts: %d\n", self, start_at);
+    int sock_id = connect_to_port(self);
 
-    for (itr = 0; itr < n_edges; itr += 1)
-        procs[itr] = atoi(argv[4 + itr]);
-
-    start_at = atoi(argv[2]) == 1 ? TRUE : FALSE;
-
-    printf("creating a node at %d %d \n\n", self, start_at);
-    sock_id = connect_to_port(self);
-
+    // Implement the structure of the node
     list l;
 
-    if (start_at == TRUE)
-    {
-        list l;
-        l.probe[0] = self;
-        l.probe[1] = self;
-        send_probes(sock_id, self, procs, n_edges, l);
+    if (start_at) { // Initiate the process
+        list l1;
+        l1.probe[0] = self;
+        l1.probe[1] = self;
+        send_probes(sock_id, self, process, numEdges, l1);
     }
+    
+    struct sockaddr_in from;
+    int len; // very important
 
-    while (TRUE)
-    {
-        memset(&from, 0, sizeof(from));
-        n = recvfrom(sock_id, &l, sizeof(list), MSG_WAITALL, (struct sockaddr *)&from, &len);
-        printf("Recieved probe: ");
+    while (true) {
+        memset(&from, 0, sizeof(from)); // initialise the struct
+        recvfrom(sock_id, &l, sizeof(list), MSG_WAITALL, (struct sockaddr *)&from, &len); // receive the probe
         print(l);
-        printf("\n");
-        if (l.probe[0] == -1)
-        {
-            printf("Deadlock has happened");
-            send_probes(sock_id, self, procs, n_edges, l);
+        if (l.probe[0] == -1) { // source node is lost
+            printf("Deadlock has happended\n");
+            send_probes(sock_id, self, process, numEdges, l);
             break;
         }
-        if (l.probe[0] == self)
-        {
-            printf("Deadlock is detected");
+        if (l.probe[0] == self) { // cycle is detected
+            printf("Deadlock has happended\n");
             l.probe[0] = -1;
-            send_probes(sock_id, self, procs, n_edges, l);
+            send_probes(sock_id, self, process, numEdges, l);
             break;
         }
-
-        else
-        {
+        else { // the source node starts sending the probe
             l.probe[1] = self;
-            send_probes(sock_id, self, procs, n_edges, l);
+            send_probes(sock_id, self, process, numEdges, l);
         }
-    }
+    }    
+
+    return 0;
 }
