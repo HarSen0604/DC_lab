@@ -1,17 +1,15 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <time.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
 #include <sys/types.h>
-#include <time.h>
+#include <errno.h>
 
-#define MSG_CONFIRM 0
-#define TRUE 1
-#define FALSE 0
 #define ML 1024
 #define MPROC 32
 
@@ -22,62 +20,56 @@
    	3. Returns socket id
 */
 
-int connect_to_port (int connect_to) {
-	int sock_id;
-	int opt = 1;
-	struct sockaddr_in server;
-	sock_id = socket(AF_INET, SOCK_DGRAM, 0);
-	if ((sock_id < 0)) {
-		perror("Unable to create a socket");
-		exit(EXIT_FAILURE);
-	}
-	setsockopt(sock_id, SOL_SOCKET, SO_REUSEADDR, (const void *)&opt, sizeof(int));
-	memset(&server, 0, sizeof(server));
-	server.sin_family = AF_INET;
-	server.sin_addr.s_addr = INADDR_ANY;
-	server.sin_port = htons(connect_to);
+int connect_to_port(int connect_to) {
+    int sock_id = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock_id < 0) {
+        perror("Unable to create a socket");
+        exit(EXIT_FAILURE);
+    }
+    
+    struct sockaddr_in server_address;
 
-	if (bind(sock_id, (const struct sockaddr *)&server, sizeof(server)) < 0) {
-		perror("Unable to bind to port");
-		exit (EXIT_FAILURE);
-	}
-	return sock_id;
+    server_address.sin_family = AF_INET;
+    server_address.sin_addr.s_addr = INADDR_ANY;
+    server_address.sin_port = htons(connect_to);
+
+    // Bind the socket to a specific address and port
+    if (bind(sock_id, (const struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
+        perror("Bind failed");
+        exit(EXIT_FAILURE);
+    }
+
+    return sock_id;
 }
 
 /*
     sends a message to port id to
 */
 
-void send_to_id(int to , int id, char message[ML]) {
-    struct sockaddr_in cl;
-    memset(&cl, 0, sizeof(cl));
+void send_to_id(int id , int sock_id, char message[ML]) {
+    struct sockaddr_in client_address;
+    memset(&client_address, 0, sizeof(client_address));
 
-    cl.sin_family = AF_INET;
-    cl.sin_addr.s_addr = INADDR_ANY;
-    cl.sin_port = htons(to);
+    client_address.sin_family = AF_INET;
+    client_address.sin_addr.s_addr = INADDR_ANY;
+    client_address.sin_port = htons(id);
 
-    sendto(id, \
-        (const char *) message, \
-        strlen(message), \
-        MSG_CONFIRM, \
-        (const struct sockaddr *)&cl, \
-        sizeof(cl));
+    sendto(sock_id, (const char *) message, strlen(message), 0, (const struct sockaddr *)&client_address, sizeof(client_address));
 }
 
 /*
     starts the election, returns 1 if it wins the round
 */
 
-int election(int id, int *procs, int num_procs, int self) {
-    int itr;
+int election(int id, int *process, int numProc, int self) {
     char message[ML];
     strcpy(message, "ELECTION");
     int is_new_coord = 1; // assume you are the winner until you lose;
     // coord -> The idea behind the Bully Algorithm is to elect the highest-numbered processor as the coordinator.
-    for (itr = 0; itr < num_procs; itr++) {
-        if (procs[itr] > self) {
-            printf("Sending election to: %d\n", procs[itr]);
-            send_to_id(procs[itr], id, message);
+    for (int i = 0; i < numProc; i++) {
+        if (process[i] > self) {
+            send_to_id(process[i], id, message);
+            printf("Sending election to: %d\n", process[i]);
             is_new_coord = 0; // a proc with id > self exists thus cannot be coord
         }
     }
@@ -88,33 +80,28 @@ int election(int id, int *procs, int num_procs, int self) {
     announces completion by sending coord messages
 */
 
-void announce_completion (int id, int *procs, int num_procs, int self) {
-    int itr;
+void announce_completion (int id, int *process, int numProc, int self) {
     char message[ML];
     strcpy(message, "COORDINATOR");
 
-    for (itr = 0; itr < num_procs; itr++) {
-        if (procs[itr] != self) {
-            send_to_id(procs[itr], id, message);
+    for (int i = 0; i < numProc; i++) {
+        if (process[i] != self) {
+            send_to_id(process[i], id, message);
         }
     }
 }
 
 int main(int argc, char *argv[]) {
     // 0. Initialize variables
-    int self = atoi(argv[1]), n_proc = atoi(argv[2]);
-    int procs[MPROC];
-    int sock_id, bully_id;
-    int itr, len, n, start_at;
-    char buff[ML], message[ML];
+    int self = atoi(argv[1]), numProc = atoi(argv[2]);
+    int process[MPROC];
+    int sock_id;
 
-    struct sockaddr_in from;
-
-    for (itr = 0; itr < n_proc; itr++) {
-        procs[itr] = atoi(argv[3 + itr]);
+    for (int i = 0; i < numProc; i++) {
+        process[i] = atoi(argv[3 + i]);
     }
 
-    start_at = atoi(argv[3 + n_proc]) == 1 ? TRUE : FALSE;
+    bool start_at = atoi(argv[3 + numProc]) == 1 ? true : false;
 
     // 1. Create socket
     printf("Creating a node at %d %d\n", self, start_at);
@@ -122,38 +109,38 @@ int main(int argc, char *argv[]) {
     // getchar();
 
     // 2. check if process is initiator
-    if (start_at == TRUE) {
-        election(sock_id, procs, n_proc, self);
+    if (start_at) {
+        election(sock_id, process, numProc, self);
     }
 
+    struct sockaddr_in from;
+    int len, bully_id;
+    char buff[ML], message[ML];
+    
     // 3. if not the initiator, wait for some time
-    while (TRUE) {
+    while (true) {
         memset(&from, 0, sizeof(from));
-        n = recvfrom(sock_id, (char *)buff, ML, MSG_WAITALL, (struct sockaddr *)&from, &len);
+        int n = recvfrom(sock_id, (char *)buff, ML, MSG_WAITALL, (struct sockaddr *)&from, &len);
         buff[n] = '\0';
         printf("Received messed: %s\n", buff);
 
         if (!strcmp(buff, "ELECTION")) {
             strcpy(message, "E-ACK"); // send election ack
             
-            sendto(sock_id, \
-                (const char *) message, \
-                strlen(message), \
-                MSG_CONFIRM, \
-                (const struct sockaddr *) &from, \
-                sizeof(from)
-            );
+            sendto(sock_id, (const char *) message, strlen(message), 0, (const struct sockaddr *) &from, sizeof(from));
 
-            if (election(sock_id, procs, n_proc, self)) {
-                announce_completion(sock_id, procs, n_proc, self);
+            if (election(sock_id, process, numProc, self)) {
+                announce_completion(sock_id, process, numProc, self);
                 printf("ANNOUNCING SELF AS NEW COORD\n");
             }
         }
         else if (!strcmp(buff, "E-ACK")) {
+            printf("%s\n", buff);
             continue; // do nothing, the job is done
         }
         else if (!strcmp(buff, "COORDINATOR")) {
             bully_id = from.sin_port;
         }
     }
+	return 0;
 }
