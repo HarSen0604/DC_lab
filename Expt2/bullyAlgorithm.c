@@ -95,7 +95,6 @@ int main(int argc, char *argv[]) {
     // 0. Initialize variables
     int self = atoi(argv[1]), numProc = atoi(argv[2]);
     int process[MPROC];
-    int sock_id;
 
     for (int i = 0; i < numProc; i++) {
         process[i] = atoi(argv[3 + i]);
@@ -105,7 +104,7 @@ int main(int argc, char *argv[]) {
 
     // 1. Create socket
     printf("Creating a node at %d %d\n", self, start_at);
-    sock_id = connect_to_port(self);
+    int sock_id = connect_to_port(self);
     // getchar();
 
     // 2. check if process is initiator
