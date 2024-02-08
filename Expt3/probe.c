@@ -32,7 +32,7 @@ int connect_to_port(int connect_to) {
     server_address.sin_port = htons(connect_to);
 
     // Bind the socket to a specific address and port
-    if (bind(sock_id, (const struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
+    if (bind(sock_id, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
         perror("Bind failed");
         exit(EXIT_FAILURE);
     }
@@ -49,7 +49,7 @@ void send_to_id(int id, int sock_id, list l) {
     client_address.sin_addr.s_addr = INADDR_ANY;
     client_address.sin_port = htons(id);
     
-    sendto(sock_id, &l, sizeof(list), 0, (const struct sockaddr *)&client_address, sizeof(client_address));
+    sendto(sock_id, &l, sizeof(list), 0, (struct sockaddr *)&client_address, sizeof(client_address));
 }
 
 // Sending the probes to each node
