@@ -122,10 +122,11 @@ int main(int argc, char *argv[]) {
         memset(&from, 0, sizeof(from));
         int n = recvfrom(sock_id, (char *)buff, ML, MSG_WAITALL, (struct sockaddr *)&from, &len);
         buff[n] = '\0';
-        printf("Received messed: %s\n", buff);
+        printf("Received message: %s\n", buff);
 
         if (!strcmp(buff, "ELECTION")) {
             strcpy(message, "E-ACK"); // send election ack
+            printf("%s\n", message);
             
             sendto(sock_id, (const char *) message, strlen(message), 0, (const struct sockaddr *) &from, sizeof(from));
 
