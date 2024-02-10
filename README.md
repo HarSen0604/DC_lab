@@ -1,2 +1,2 @@
 # DC_lab
-This is a personal repo for the 6th sem DC lab
+Welcome to my repository dedicated to the Distributed Computing Laboratory for the 6th semester.
